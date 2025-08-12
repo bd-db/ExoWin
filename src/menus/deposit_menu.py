@@ -153,12 +153,19 @@ async def deposit_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
     
+    # Add debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Deposit menu callback: {query.data}")
+    
     data = query.data.split("_")
     
     if len(data) < 2:
+        logger.warning(f"Invalid callback data: {query.data}")
         return
     
     action = data[1]
+    logger.info(f"Deposit action: {action}")
     
     if action == "amount":
         # Handle deposit amount selection
@@ -190,12 +197,21 @@ async def deposit_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 except ValueError:
                     await query.edit_message_text("❌ Invalid amount.")
     
-    elif len(data) >= 4 and data[1] in ["btc", "eth", "usdt", "usdc", "ltc", "sol", "bnb", "trx", "xmr", "dai", "doge", "shib", "bch", "matic", "ton", "not"]:
+    # Handle cryptocurrency selection
+    elif data[0] == "deposit" and len(data) >= 3 and data[1] in ["btc", "eth", "usdt", "usdc", "ltc", "sol", "bnb", "trx", "xmr", "dai", "doge", "shib", "bch", "matic", "ton", "not"]:
         # Handle cryptocurrency selection - unified pattern
         crypto_currency = data[1].upper()
-        amount = float(data[2])
-        
-        await process_crypto_deposit(update, context, crypto_currency, amount)
+        try:
+            amount = float(data[2])
+            logger.info(f"Selected cryptocurrency: {crypto_currency}, amount: ${amount}")
+            await process_crypto_deposit(update, context, crypto_currency, amount)
+        except ValueError as e:
+            logger.error(f"Invalid amount format: {data[2]}, error: {str(e)}")
+            await update.callback_query.edit_message_text(
+                "❌ **Error Processing Payment** ❌\n\nInvalid amount format. Please try again.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="menu_deposit")]]),
+                parse_mode='Markdown'
+            )
     
     elif action == "show" and len(data) >= 3 and data[1] == "payment":
         # Handle showing payment details again
@@ -435,6 +451,11 @@ async def process_crypto_deposit(update: Update, context: ContextTypes.DEFAULT_T
     """Process cryptocurrency deposit"""
     user_id = update.callback_query.from_user.id
     
+    # Add debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Processing crypto deposit: {crypto_currency} for ${amount} by user {user_id}")
+    
     try:
         # Validate cryptocurrency is supported
         from src.wallet.nowpayments import SUPPORTED_CRYPTOS
@@ -458,10 +479,14 @@ async def process_crypto_deposit(update: Update, context: ContextTypes.DEFAULT_T
         # Create payment using NOWPayments
         payment = await create_deposit_payment(user_id, amount, crypto_currency)
         
-        if payment and payment.get("payment_id"):
+        logger.info(f"Payment response: {payment}")
+        
+        if payment and payment.get("payment_id") and not payment.get("error"):
             payment_id = payment.get("payment_id")
             payment_address = payment.get("pay_address")
             pay_amount = payment.get("pay_amount")
+            
+            logger.info(f"Payment created successfully: ID={payment_id}, Address={payment_address}, Amount={pay_amount}")
             
             # Store payment info in context for tracking
             context.user_data[f"payment_{payment_id}"] = {
@@ -524,8 +549,13 @@ async def process_crypto_deposit(update: Update, context: ContextTypes.DEFAULT_T
             await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
         else:
             error_msg = "Could not create payment"
-            if payment and "message" in payment:
-                error_msg = payment["message"]
+            if payment:
+                if payment.get("error") and payment.get("message"):
+                    error_msg = payment["message"]
+                elif "message" in payment:
+                    error_msg = payment["message"]
+            
+            logger.error(f"Payment creation failed: {error_msg}")
             
             message = (
                 "❌ **Payment Error** ❌\n\n"
@@ -543,6 +573,8 @@ async def process_crypto_deposit(update: Update, context: ContextTypes.DEFAULT_T
             await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
     except Exception as e:
+        logger.error(f"Exception in process_crypto_deposit: {str(e)}", exc_info=True)
+        
         message = (
             "❌ **Payment Error** ❌\n\n"
             f"Error: {str(e)}\n\n"
@@ -556,7 +588,14 @@ async def process_crypto_deposit(update: Update, context: ContextTypes.DEFAULT_T
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        try:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        except Exception as edit_error:
+            logger.error(f"Failed to edit message: {str(edit_error)}")
+            try:
+                await update.callback_query.answer("Error processing payment. Please try again.")
+            except:
+                pass
 
 async def deposit_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle deposit-related messages"""
