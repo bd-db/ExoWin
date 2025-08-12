@@ -164,18 +164,37 @@ async def balance_command(update: Update, context):
     """Show user balance when the command /balance is issued."""
     from src.database import get_user
     from src.utils.formatting import format_money
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from src.menus.deposit_menu import show_deposit_menu
+    from src.wallet.withdrawal_system import withdrawal_system
     
     user_id = update.effective_user.id
     bot_logger.info(f"User {user_id} checked balance")
     user = await get_user(user_id)
     
     balance_message = (
-        "💰 Your Balance 💰\n\n"
+        "💰 **Your Balance** 💰\n\n"
         f"Current balance: {format_money(user['balance'])}\n\n"
-        "Use /wallet to manage your funds."
+        "Use the buttons below to manage your funds."
     )
     
-    await update.message.reply_text(balance_message)
+    # Create keyboard with deposit and withdraw buttons
+    keyboard = [
+        [
+            InlineKeyboardButton("💰 Deposit", callback_data="menu_deposit"),
+            InlineKeyboardButton("💸 Withdraw", callback_data="withdrawal_start")
+        ],
+        [
+            InlineKeyboardButton("🎮 Games", callback_data="menu_games"),
+            InlineKeyboardButton("👤 Profile", callback_data="menu_profile")
+        ],
+        [
+            InlineKeyboardButton("🏆 Leaderboard", callback_data="menu_leaderboard")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(balance_message, reply_markup=reply_markup, parse_mode='Markdown')
 
 @handle_errors
 async def stats_command(update: Update, context):
