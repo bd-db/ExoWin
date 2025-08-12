@@ -128,7 +128,11 @@ class NOWPaymentsAPI:
                     else:
                         error_text = await response.text()
                         logger.error(f"Failed to create payment: {response.status}, {error_text}")
-                        return None
+                        try:
+                            error_json = json.loads(error_text)
+                            return {"error": True, "message": error_json.get("message", "Unknown error")}
+                        except:
+                            return {"error": True, "message": f"API Error: {response.status}"}
         except Exception as e:
             logger.error(f"Error creating payment: {str(e)}")
             return None
@@ -300,6 +304,8 @@ async def create_deposit_payment(user_id, amount_usd, crypto_currency=None):
     order_id = f"deposit_{user_id}_{datetime.now().timestamp()}"
     order_description = f"Deposit {amount_usd} USD to Gamble Bot wallet"
     
+    logger.info(f"Creating deposit payment: user_id={user_id}, amount=${amount_usd}, crypto={crypto_currency}")
+    
     payment = await nowpayments_client.create_payment(
         price_amount=amount_usd,
         price_currency="USD",
@@ -307,6 +313,11 @@ async def create_deposit_payment(user_id, amount_usd, crypto_currency=None):
         order_id=order_id,
         order_description=order_description
     )
+    
+    if payment:
+        logger.info(f"Payment created: {payment.get('payment_id', 'unknown')}")
+    else:
+        logger.error(f"Failed to create payment for user {user_id}")
     
     return payment
 
